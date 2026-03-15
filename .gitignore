@@ -1,0 +1,47 @@
+# ── Data files (too large for Git) ───────────────────────────
+data/raw/
+data/processed/
+data/outputs/
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+
+# ── Jupyter Notebooks ────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── Conda / Virtual Environments ─────────────────────────────
+.env
+.venv
+env/
+venv/
+*.conda
+
+# ── Charts and generated outputs ─────────────────────────────
+step2_charts/
+*.png
+*.jpg
+
+# ── AWS / Credentials (NEVER commit these) ───────────────────
+.aws/
+*.pem
+*.key
+secrets.yml
+secrets.yaml
+.env.local
+
+# ── OS files ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE files ────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
