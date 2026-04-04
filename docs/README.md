@@ -126,3 +126,16 @@ PBJ file: PROVNUM  <-->  Supporting files: CMS Certification Number (CCN)
 > that will be silently dropped if converted to an integer.
 
 ---
+
+## Environments
+
+| File | Env name | Purpose |
+|------|----------|---------|
+| `environment.yml` | `ds4b_201_p` | Data analysis — pandas, numpy, EDA scripts |
+| `environment_cdk.yml` | `healthcare-cdk` | Infrastructure deployment — CDK + all data libs |
+
+To recreate the CDK environment from scratch:
+```bash
+conda env create -f environment_cdk.yml
+conda activate healthcare-cdk
+```
