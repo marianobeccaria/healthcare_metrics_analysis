@@ -6,6 +6,7 @@ from aws_cdk import (
     aws_iam as iam,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
+    aws_glue as glue,
 )
 from constructs import Construct
 
@@ -103,3 +104,33 @@ class HealthcareMetricsStack(Stack):
                 retain_on_delete=True,   # never delete folders on cdk destroy
                 prune=False
             )
+
+# ── 3. Glue Python Shell job — ingestion ──────────────
+        # Lightweight Python job — no Spark, no cluster
+        # Connects to Google Drive API, checks for new quarters,
+        # downloads CSVs directly to S3 Bronze
+        ingestion_job = glue.CfnJob(
+            self, "IngestionJob",
+            name="healthcare-ingestion",
+            description="Download new CMS quarterly files from Google Drive to S3 Bronze",
+            role=glue_role.role_arn,
+            command=glue.CfnJob.JobCommandProperty(
+                name="pythonshell",         # lightweight — no Spark cluster
+                python_version="3.9",
+                script_location=f"s3://{BUCKET_NAME}/scripts/glue_ingestion.py"
+            ),
+            default_arguments={
+                "--BUCKET_NAME":  BUCKET_NAME,
+                "--BRONZE_PATH":  f"s3://{BUCKET_NAME}/bronze/quarter={QUARTER}/",
+                "--QUARTER":      QUARTER,
+                "--job-language": "python",
+                "--enable-job-insights": "true",
+            },
+            max_capacity=0.0625,    # 1/16 DPU — minimum for Python Shell
+            max_retries=1,
+            timeout=30,             # minutes
+            glue_version="1.0",     # Python Shell jobs use Glue 1.0
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(
+                max_concurrent_runs=1
+            )
+        )
