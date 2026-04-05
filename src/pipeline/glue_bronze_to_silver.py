@@ -80,7 +80,7 @@ logger.info("Reading PBJ staffing data from Bronze...")
 
 df_pbj_raw = spark.read \
     .option("header", "true") \
-    .option("encoding", "latin-1") \
+    .option("encoding", "ISO-8859-1") \
     .option("inferSchema", "false") \
     .csv(BRONZE_PATH + "PBJ_Daily_Nurse_Staffing_Q2_2024.csv")
 
@@ -94,7 +94,7 @@ logger.info("Reading NH_ProviderInfo from Bronze...")
 
 df_provider_raw = spark.read \
     .option("header", "true") \
-    .option("encoding", "latin-1") \
+    .option("encoding", "ISO-8859-1") \
     .option("inferSchema", "false") \
     .csv(BRONZE_PATH + "NH_ProviderInfo_Oct2024.csv")
 
@@ -196,7 +196,7 @@ df_provider = df_provider_raw.select(
         .cast(FloatType()).alias("nursing_turnover"),
     F.col("Reported RN Staffing Hours per Resident per Day") \
         .cast(FloatType()).alias("reported_rn_hrs"),
-    F.col("Reported CNA Staffing Hours per Resident per Day") \
+    F.col("Reported Nurse Aide Staffing Hours per Resident per Day") \
         .cast(FloatType()).alias("reported_cna_hrs"),
 )
 
