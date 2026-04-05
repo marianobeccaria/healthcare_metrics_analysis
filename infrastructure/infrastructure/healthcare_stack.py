@@ -134,3 +134,43 @@ class HealthcareMetricsStack(Stack):
                 max_concurrent_runs=1
             )
         )
+
+# ── 4. Glue Spark job — Bronze to Silver ─────────────
+        # Full PySpark job — reads raw CSVs from Bronze, applies
+        # all EDA-informed transformations, writes Delta Lake to Silver
+        bronze_to_silver_job = glue.CfnJob(
+            self, "BronzeToSilverJob",
+            name="healthcare-bronze-to-silver",
+            description="Clean, validate, join PBJ + ProviderInfo, write Delta Lake to Silver",
+            role=glue_role.role_arn,
+            command=glue.CfnJob.JobCommandProperty(
+                name="glueetl",             # Spark ETL — different from pythonshell
+                python_version="3",
+                script_location=f"s3://{BUCKET_NAME}/scripts/glue_bronze_to_silver.py"
+            ),
+            default_arguments={
+                "--BUCKET_NAME":        BUCKET_NAME,
+                "--BRONZE_PATH":        f"s3://{BUCKET_NAME}/bronze/quarter={QUARTER}/",
+                "--SILVER_PATH":        f"s3://{BUCKET_NAME}/silver/staffing/",
+                "--AUDIT_PATH":         f"s3://{BUCKET_NAME}/audit/unmatched_ccn/",
+                "--QUARTER":            QUARTER,
+                "--datalake-formats":   "delta",
+                "--conf":               (
+                    "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension"
+                    " --conf spark.sql.catalog.spark_catalog="
+                    "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+                ),
+                "--enable-job-insights":              "true",
+                "--enable-continuous-cloudwatch-log": "true",
+                "--enable-metrics":                   "true",
+                "--job-language":                     "python",
+            },
+            glue_version="4.0",          # Glue 4.0 = Spark 3.3, Python 3.10
+            worker_type="G.1X",          # 1 DPU per worker — sufficient for 1.3M rows
+            number_of_workers=2,         # 2 workers = 2 DPU total
+            max_retries=1,
+            timeout=60,                  # minutes
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(
+                max_concurrent_runs=1
+            )
+        )
