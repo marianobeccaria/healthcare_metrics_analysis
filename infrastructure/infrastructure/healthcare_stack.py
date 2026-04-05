@@ -174,3 +174,42 @@ class HealthcareMetricsStack(Stack):
                 max_concurrent_runs=1
             )
         )
+
+# ── 5. Glue Spark job — Silver to Gold ───────────────
+        # Reads Silver Delta Lake, calculates all staffing metrics
+        # against CMS thresholds, writes Gold Delta Lake tables
+        silver_to_gold_job = glue.CfnJob(
+            self, "SilverToGoldJob",
+            name="healthcare-silver-to-gold",
+            description="Calculate staffing metrics from Silver, write Delta Lake to Gold",
+            role=glue_role.role_arn,
+            command=glue.CfnJob.JobCommandProperty(
+                name="glueetl",
+                python_version="3",
+                script_location=f"s3://{BUCKET_NAME}/scripts/glue_silver_to_gold.py"
+            ),
+            default_arguments={
+                "--BUCKET_NAME":        BUCKET_NAME,
+                "--SILVER_PATH":        f"s3://{BUCKET_NAME}/silver/staffing/",
+                "--GOLD_PATH":          f"s3://{BUCKET_NAME}/gold/",
+                "--QUARTER":            QUARTER,
+                "--datalake-formats":   "delta",
+                "--conf":               (
+                    "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension"
+                    " --conf spark.sql.catalog.spark_catalog="
+                    "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+                ),
+                "--enable-job-insights":              "true",
+                "--enable-continuous-cloudwatch-log": "true",
+                "--enable-metrics":                   "true",
+                "--job-language":                     "python",
+            },
+            glue_version="4.0",
+            worker_type="G.1X",
+            number_of_workers=2,
+            max_retries=1,
+            timeout=60,
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(
+                max_concurrent_runs=1
+            )
+        )
