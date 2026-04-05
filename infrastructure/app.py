@@ -10,9 +10,12 @@
 # ENVIRONMENT:
 #   conda activate healthcare-cdk
 # ============================================================
-
+import os
+from dotenv import load_dotenv
 import aws_cdk as cdk
 from infrastructure.healthcare_stack import HealthcareMetricsStack
+
+load_dotenv()
 
 app = cdk.App()
 
@@ -20,8 +23,8 @@ HealthcareMetricsStack(
     app,
     "HealthcareMetricsStack",
     env=cdk.Environment(
-        account="858477419022",
-        region="us-east-1"
+        account=os.environ.get("HEALTHCARE_ACCOUNT"),
+        region=os.environ.get("HEALTHCARE_REGION", "us-east-1")
     ),
     description="Healthcare Metrics Pipeline — Glue Workflow + Delta Lake on S3"
 )
