@@ -7,6 +7,7 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
     aws_glue as glue,
+    aws_logs as logs,
 )
 from constructs import Construct
 
@@ -105,7 +106,7 @@ class HealthcareMetricsStack(Stack):
                 prune=False
             )
 
-# ── 3. Glue Python Shell job — ingestion ──────────────
+        # ── 3. Glue Python Shell job — ingestion ──────────────
         # Lightweight Python job — no Spark, no cluster
         # Connects to Google Drive API, checks for new quarters,
         # downloads CSVs directly to S3 Bronze
@@ -135,7 +136,7 @@ class HealthcareMetricsStack(Stack):
             )
         )
 
-# ── 4. Glue Spark job — Bronze to Silver ─────────────
+        # ── 4. Glue Spark job — Bronze to Silver ─────────────
         # Full PySpark job — reads raw CSVs from Bronze, applies
         # all EDA-informed transformations, writes Delta Lake to Silver
         bronze_to_silver_job = glue.CfnJob(
@@ -175,7 +176,7 @@ class HealthcareMetricsStack(Stack):
             )
         )
 
-# ── 5. Glue Spark job — Silver to Gold ───────────────
+        # ── 5. Glue Spark job — Silver to Gold ───────────────
         # Reads Silver Delta Lake, calculates all staffing metrics
         # against CMS thresholds, writes Gold Delta Lake tables
         silver_to_gold_job = glue.CfnJob(
@@ -213,3 +214,106 @@ class HealthcareMetricsStack(Stack):
                 max_concurrent_runs=1
             )
         )
+
+        # ── 6. Glue Workflow ──────────────────────────────────
+        # Single workflow that owns all three jobs.
+        # Acts as the container — triggers are attached to it.
+        workflow = glue.CfnWorkflow(
+            self, "PipelineWorkflow",
+            name="healthcare-metrics-pipeline",
+            description="End-to-end pipeline: Google Drive → Bronze → Silver → Gold",
+            max_concurrent_runs=1   # never run two full pipelines simultaneously
+        )
+
+        # ── 7. Glue Triggers ──────────────────────────────────
+        # Trigger 1: Schedule — starts the ingestion job
+        # Runs quarterly: 1st of Jan, Apr, Jul, Oct at 6am UTC
+        schedule_trigger = glue.CfnTrigger(
+            self, "ScheduleTrigger",
+            name="healthcare-schedule-trigger",
+            description="Quarterly schedule — starts ingestion job",
+            workflow_name=workflow.name,
+            type="SCHEDULED",
+            schedule="cron(0 6 1 1,4,7,10 ? *)",
+            start_on_creation=True,
+            actions=[glue.CfnTrigger.ActionProperty(
+                job_name=ingestion_job.name,
+                timeout=30
+            )]
+        )
+        # ensure workflow exists before triggers are created
+        schedule_trigger.add_dependency(workflow)
+        schedule_trigger.add_dependency(ingestion_job)
+
+        # Trigger 2: Conditional — starts Bronze→Silver
+        # only fires when ingestion job SUCCEEDS
+        bronze_trigger = glue.CfnTrigger(
+            self, "BronzeTrigger",
+            name="healthcare-bronze-trigger",
+            description="Starts Bronze to Silver after ingestion succeeds",
+            workflow_name=workflow.name,
+            type="CONDITIONAL",
+            start_on_creation=True,
+            predicate=glue.CfnTrigger.PredicateProperty(
+                logical="AND",
+                conditions=[glue.CfnTrigger.ConditionProperty(
+                    job_name=ingestion_job.name,
+                    logical_operator="EQUALS",
+                    state="SUCCEEDED"
+                )]
+            ),
+            actions=[glue.CfnTrigger.ActionProperty(
+                job_name=bronze_to_silver_job.name,
+                timeout=60
+            )]
+        )
+        bronze_trigger.add_dependency(workflow)
+        bronze_trigger.add_dependency(ingestion_job)
+        bronze_trigger.add_dependency(bronze_to_silver_job)
+
+        # Trigger 3: Conditional — starts Silver→Gold
+        # only fires when Bronze→Silver SUCCEEDS
+        gold_trigger = glue.CfnTrigger(
+            self, "GoldTrigger",
+            name="healthcare-gold-trigger",
+            description="Starts Silver to Gold after Bronze to Silver succeeds",
+            workflow_name=workflow.name,
+            type="CONDITIONAL",
+            start_on_creation=True,
+            predicate=glue.CfnTrigger.PredicateProperty(
+                logical="AND",
+                conditions=[glue.CfnTrigger.ConditionProperty(
+                    job_name=bronze_to_silver_job.name,
+                    logical_operator="EQUALS",
+                    state="SUCCEEDED"
+                )]
+            ),
+            actions=[glue.CfnTrigger.ActionProperty(
+                job_name=silver_to_gold_job.name,
+                timeout=60
+            )]
+        )
+        gold_trigger.add_dependency(workflow)
+        gold_trigger.add_dependency(bronze_to_silver_job)
+        gold_trigger.add_dependency(silver_to_gold_job)
+
+
+        # ── 8. CloudWatch Log Groups ──────────────────────────
+        # One log group per Glue job.
+        # Glue writes logs here automatically when jobs run.
+        # Retained for 30 days then auto-deleted to control costs.
+        from aws_cdk import aws_logs as logs
+
+        log_groups = [
+            ("IngestionLogs",      "/aws-glue/healthcare-ingestion"),
+            ("BronzeToSilverLogs", "/aws-glue/healthcare-bronze-to-silver"),
+            ("SilverToGoldLogs",   "/aws-glue/healthcare-silver-to-gold"),
+        ]
+
+        for construct_id, log_group_name in log_groups:
+            logs.LogGroup(
+                self, construct_id,
+                log_group_name=log_group_name,
+                retention=logs.RetentionDays.ONE_MONTH,
+                removal_policy=RemovalPolicy.DESTROY
+            )
