@@ -14,6 +14,7 @@
 |---------|------|---------|
 | 1.0 | April 2026 | Initial draft — Lambda + Step Functions + Parquet |
 | 2.0 | April 2026 | Revised per SME feedback — Glue Workflow + Delta Lake |
+| 2.1 | April 2026 | Updated with actual implementation results and CDK deployment |
 
 **SME Feedback (v1.0 → v2.0):**
 > "There are good analysis reports on your repository but the architecture needs
@@ -28,9 +29,15 @@
 - Added Delta Lake format to Silver and Gold layers (replaces plain Parquet)
 - Added Glue Workflow as the single orchestration layer
 
+**Changes made in v2.1:**
+- Corrected encoding from latin-1 to ISO-8859-1 (Spark Java charset name)
+- Added CDK infrastructure deployment section
+- Added actual implementation and test results
+- Noted quality_correlations Gold table as planned (not yet built)
+
 ---
 
-## 1. Executive Summary
+## 1. Summary
 
 This document describes the AWS data pipeline architecture for the Healthcare
 Metrics project. The pipeline ingests CMS nursing home staffing data from Google
@@ -38,7 +45,7 @@ Drive, transforms it through a three-layer Delta Lake on S3, calculates key
 staffing and quality metrics, and surfaces insights via an interactive Streamlit
 dashboard.
 
-The architecture is unified entirely within AWS Glue — a single Glue Workflow
+The architecture is centralized entirely within AWS Glue — a single Glue Workflow
 orchestrates ingestion, transformation, and metric calculation. Delta Lake on S3
 provides ACID transactions, time travel, and native incremental merge capability,
 replacing the manual watermark pattern from v1.0.
@@ -62,12 +69,13 @@ replacing the manual watermark pattern from v1.0.
 **Download link:** https://drive.google.com/drive/folders/15KqJ1MZ7JcgAkOfqcaWcALWkG0dh3jpE  
 **Update frequency:** Quarterly (CMS releases new data each quarter)
 
-**Key data quality findings from Step 2 EDA:**
+**Key data quality findings from Step 2 Early Data Analysis:**
 - Zero null values across all 33 columns in the PBJ file
 - Zero duplicate PROVNUM + WorkDate combinations
 - 99.9% join match rate between PBJ and ProviderInfo (17 unmatched CCNs)
 - Encoding: all CMS files require latin-1 encoding (Windows-1252 characters in facility names)
 - Edge case: rows with MDScensus < 10 indicate reopening facilities and must be excluded from ratio calculations
+- Headline finding: only 24.5% of facility-days meet CMS minimum staffing thresholds
 
 ---
 
@@ -103,7 +111,8 @@ Amazon Athena -- SQL queries on Gold Delta Lake
 Streamlit Dashboard -- Hosted on EC2
 ```
 
-**Orchestration:** AWS Glue Workflow with Glue Triggers chaining all three jobs  
+**Orchestration:** AWS Glue Workflow with Glue Triggers chaining all three jobs (job only starts if previous SUCCEEDED)
+**Infrastructure as Code:** AWS CDK (Python) — full stack deployable with cdk deploy  
 **Monitoring:** AWS CloudWatch for Glue job logs, errors, and pipeline alerts
 
 ---
@@ -112,29 +121,31 @@ Streamlit Dashboard -- Hosted on EC2
 
 | Service | Role | Why this service |
 |---------|------|-----------------|
+| **AWS CDK (Python)** | Infrastructure as code | Entire AWS stack defined in Python — repeatable, version controlled, destroyable with one command |
 | **AWS Glue Workflow** | Full pipeline orchestration | Single service for scheduling, job chaining, and dependency management — eliminates need for Lambda and Step Functions |
 | **Glue Python Shell job** | Incremental ingestion from Google Drive | Lightweight Python environment inside Glue — connects to Drive API, checks for new quarters, downloads to Bronze |
 | **Glue Spark job (x2)** | Bronze to Silver and Silver to Gold transformation | Distributed PySpark handles 1.3M+ rows efficiently; native Delta Lake support via delta-core library |
 | **Amazon S3** | Data lake storage (all three layers) | Cost-effective, durable, natively integrates with Glue and Athena |
-| **Delta Lake on S3** | Table format for Silver and Gold | ACID transactions, time travel, incremental merge — replaces plain Parquet and manual watermark logic |
-| **Amazon Athena** | SQL querying of Gold layer | Serverless, pay-per-query, supports Delta Lake via manifest files |
+| **Delta Lake on S3** | Table format for Silver and Gold | ACID transactions, time travel, incremental merge |
+| **Amazon Athena** | SQL querying of Gold layer | Serverless, pay-per-query, no warehouse to manage |
 | **AWS CloudWatch** | Logging and alerting | Central log aggregation, Glue job failure alerts |
 | **EC2** | Streamlit dashboard hosting | Simple deployment for project scope |
 
+**Why AWS CDK:**  
+All AWS resources (IAM roles, S3 structure, Glue jobs, Workflow, Triggers,
+CloudWatch log groups) are defined in a single Python CDK stack. This means
+the entire infrastructure can be recreated with cdk deploy and torn down with
+cdk destroy — no manual console clicks, no configuration drift.
+
 **Why Glue Workflow over Step Functions + Lambda:**  
-AWS Glue Workflow provides native job chaining, scheduling, and dependency
-management entirely within the Glue service. For a pipeline where all
-processing happens in Glue jobs, adding Lambda and Step Functions introduces
-unnecessary service complexity. Glue Workflow keeps the architecture unified
-and reduces the number of IAM roles, services, and failure points to manage.
+AWS Glue Workflow provides native job chaining within a single service. Conditional
+triggers ensure each job only starts if the previous one succeeded — the pipeline
+stops automatically on failure rather than cascading bad data downstream.
 
 **Why Delta Lake over plain Parquet:**  
-Delta Lake adds a transaction log (_delta_log/) on top of S3 Parquet files,
-providing ACID guarantees and native MERGE operations. For quarterly
-incremental ingestion, Delta's merge capability means new quarters are appended
-to existing tables without rewriting historical data. Time travel also enables
-querying previous quarters for trend analysis without maintaining separate table
-copies.
+Delta Lake's MERGE operation allows new quarterly data to be appended without
+rewriting historical data. The _delta_log/ transaction log also serves as the
+incremental watermark — no separate tracking file needed.
 
 **Why Athena over Redshift:**  
 At 1.3M rows per quarter, a full Redshift cluster is overprovisioned and
@@ -143,25 +154,50 @@ data volume query performance is sufficient for dashboard use.
 
 ---
 
-## 5. Data Lake Layers
+## 5. CDK Infrastructure Stack
 
-### 5.1 Bronze Layer — Raw Ingestion
+All AWS resources defined in infrastructure/infrastructure/healthcare_stack.py
+and deployed via AWS CDK.
+
+**Resources deployed:**
+
+| Resource | Name | Type |
+|----------|------|------|
+| IAM Role | healthcare-glue-role | Glue service role + S3 access |
+| S3 Structure | mbeccaria-dea-healthcare-metrics | Bronze/Silver/Gold/audit/scripts folders |
+| Glue Job | healthcare-ingestion | Python Shell — Google Drive ingestion |
+| Glue Job | healthcare-bronze-to-silver | Spark ETL — Glue 4.0, G.1X, 2 workers |
+| Glue Job | healthcare-silver-to-gold | Spark ETL — Glue 4.0, G.1X, 2 workers |
+| Glue Workflow | healthcare-metrics-pipeline | End-to-end orchestration |
+| Glue Trigger | healthcare-schedule-trigger | Quarterly cron schedule |
+| Glue Trigger | healthcare-bronze-trigger | Conditional — fires after ingestion SUCCEEDED |
+| Glue Trigger | healthcare-gold-trigger | Conditional — fires after Bronze-Silver SUCCEEDED |
+| CloudWatch Log Group | /aws-glue/healthcare-* | One per job, 30-day retention |
+
+**Deploy command:** cdk deploy  
+**Teardown command:** cdk destroy
+
+---
+
+## 6. Data Lake Layers
+
+### 6.1 Bronze Layer — Raw Ingestion
 
 - Files land in S3 exactly as downloaded from Google Drive
 - Original filenames preserved
 - No transformations applied — this is the permanent audit record
 - Partitioned by: quarter=2024Q2/
-- Encoding preserved as-is (latin-1)
-- Format: CSV — raw files untouched
+- Encoding preserved as-is (ISO-8859-1)
+- Format: CSV
 
-### 5.2 Silver Layer — Cleaned, Validated, Delta Lake
+### 6.2 Silver Layer — Cleaned, Validated, Delta Lake
 
 Glue Spark job applies the following transformations informed by Step 2 EDA:
 
 | Transformation | Reason |
 |----------------|--------|
 | Load PROVNUM and CCN as string | Preserve leading zeros (e.g. 015009) |
-| Apply latin-1 encoding | CMS files contain Windows-1252 characters |
+| Apply ISO-8859-1 encoding | Spark Java charset for Windows-1252 characters |
 | Filter MDScensus < 10 | Exclude reopening/edge case facilities |
 | Route 17 unmatched CCNs to audit table | Preserve data, flag for investigation |
 | Join PBJ to ProviderInfo (LEFT JOIN) | Retain all staffing records, add facility context |
@@ -176,7 +212,7 @@ New quarters are merged into the existing Silver table so historical data is
 never rewritten. The MERGE operation inserts only rows where PROVNUM and
 WorkDate do not already exist in Silver.
 
-### 5.3 Gold Layer — Metrics, Delta Lake
+### 6.3 Gold Layer — Metrics, Delta Lake
 
 Glue Spark job calculates metrics from Silver, written as Delta Lake tables.
 
@@ -208,7 +244,7 @@ Glue Spark job calculates metrics from Silver, written as Delta Lake tables.
 
 ---
 
-## 6. Incremental Ingestion Design
+## 7. Incremental Ingestion Design
 
 CMS releases new quarterly data approximately every 3 months. The Glue Python
 Shell job handles incremental detection using Delta Lake transaction history
@@ -222,14 +258,13 @@ rather than a manual watermark file.
 5. If no new quarter: log and exit — Glue Workflow stops cleanly
 
 **Delta Lake replaces the manual watermark:**  
-In v1.0, a last_run.json file in S3 tracked the last ingested quarter.
-In v2.0, Delta Lake's transaction log (_delta_log/) serves this purpose
-natively — the job queries Delta history to find the latest quarter already
-present in Silver, then compares against Drive.
+The _delta_log/ transaction history replaces the manual last_run.json
+watermark from v1.0. The ingestion job queries Delta history to determine
+what has already been processed, then merges only new data.
 
 ---
 
-## 7. S3 Bucket Structure
+## 8. S3 Bucket Structure
 
 **Bucket:** mbeccaria-dea-healthcare-metrics
 
@@ -257,14 +292,14 @@ mbeccaria-dea-healthcare-metrics/
 
 ---
 
-## 8. Key Data Findings from Step 2 (EDA)
+## 9. Key Data Findings from Step 2 (EDA)
 
 | Finding | Architecture Implication |
 |---------|------------------------|
 | 1,325,324 rows per quarter | Glue Spark required — pandas too slow at scale |
 | Zero nulls, zero duplicates | No repair/deduplication layer needed in Silver |
 | 99.9% join match rate | LEFT JOIN confirmed; 17 unmatched CCNs -> audit table |
-| latin-1 encoding required | Must be specified in all Glue read operations |
+| ISO-8859-1 encoding required | Must be specified in all Glue read operations |
 | MDScensus < 10 edge cases | Silver layer filter rule |
 | Only 24.5% of days meet CMS minimums | Primary dashboard KPI |
 | Texas facilities — entire quarter understaffed | State-level partitioning enables efficient filtering |
@@ -272,7 +307,7 @@ mbeccaria-dea-healthcare-metrics/
 
 ---
 
-## 9. Questions Answered by This Pipeline
+## 10. Questions Answered by This Pipeline
 
 | Project Question | Data Required | Available |
 |----------------|---------------|-----------|
@@ -283,7 +318,7 @@ mbeccaria-dea-healthcare-metrics/
 
 ---
 
-## 10. Risks and Mitigations
+## 11. Risks and Mitigations
 
 | Risk | Likelihood | Mitigation |
 |------|-----------|------------|
@@ -296,17 +331,20 @@ mbeccaria-dea-healthcare-metrics/
 
 ---
 
-## 11. SME Approval
+## 12. SME Approval
 
 **Version 1.0 feedback received:**
-> "Architecture needs to be better. We can orchestrate the entire flow on AWS
-> Glue and also not seeing a requirement of Lambda for the same. Use Glue
-> Workflow and maybe promote your Spark code to implement Delta Lake in S3."
+- Architecture needs to be better. We can orchestrate the entire flow on AWS
+- Glue and also not seeing a requirement of Lambda for the same. Use Glue
+- Workflow and maybe promote your Spark code to implement Delta Lake in S3.
 
 **Version 2.0 changes in response:**
 - Replaced Lambda with Glue Python Shell job for ingestion
 - Replaced Step Functions with Glue Workflow for orchestration
 - Replaced plain Parquet with Delta Lake for Silver and Gold layers
 - Removed EventBridge (scheduling now inside Glue Workflow)
+
+**Version 2.1:**
+- Implemented AWS CDK to deploy infrastructure to AWS
 
 ---
