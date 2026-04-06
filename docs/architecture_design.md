@@ -334,9 +334,9 @@ mbeccaria-dea-healthcare-metrics/
 ## 12. SME Approval
 
 **Version 1.0 feedback received:**
-- Architecture needs to be better. We can orchestrate the entire flow on AWS
-- Glue and also not seeing a requirement of Lambda for the same. Use Glue
-- Workflow and maybe promote your Spark code to implement Delta Lake in S3.
+> "Architecture needs to be better. We can orchestrate the entire flow on AWS
+> Glue and also not seeing a requirement of Lambda for the same. Use Glue
+> Workflow and maybe promote your Spark code to implement Delta Lake in S3."
 
 **Version 2.0 changes in response:**
 - Replaced Lambda with Glue Python Shell job for ingestion
