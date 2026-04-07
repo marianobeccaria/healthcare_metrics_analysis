@@ -227,3 +227,248 @@ with col8:
 st.markdown("---")
 st.info("Charts coming in Stage 5...")
 
+# ── Stage 5: Charts ───────────────────────────────────────────
+# We use Plotly Express for all charts.
+# st.plotly_chart() renders a Plotly figure in Streamlit.
+# use_container_width=True makes the chart fill its column.
+
+# ── Chart 1: Staffing vs Occupancy (Question 1) ───────────────
+# Scatter plot — each dot is one facility
+# X axis: bed occupancy rate
+# Y axis: CNA hours per patient
+# Color: chronically understaffed flag
+# This answers: is there a relationship between how full a
+# facility is and how well it's staffed?
+
+st.subheader("Q1 — Staffing Levels vs Bed Occupancy Rate")
+st.markdown(
+    "Each point is one facility. "
+    "Red = chronically understaffed (below CMS minimum >50% of days)."
+)
+
+fig1 = px.scatter(
+    df_filtered,
+    x="avg_bed_occupancy_rate",
+    y="avg_CNA_hrs_per_patient",
+    color="chronically_understaffed",
+    color_discrete_map={True: "#ef4444", False: "#22c55e"},
+    hover_data=["PROVNAME", "STATE", "ownership_type"],
+    labels={
+        "avg_bed_occupancy_rate": "Avg Bed Occupancy Rate",
+        "avg_CNA_hrs_per_patient": "Avg CNA Hrs / Patient / Day",
+        "chronically_understaffed": "Chronically Understaffed"
+    },
+    opacity=0.5,
+    render_mode="svg"
+)
+
+# add CMS minimum line — horizontal reference line
+fig1.add_hline(
+    y=2.45,
+    line_dash="dash",
+    line_color="orange",
+    annotation_text="CMS Min (2.45)",
+    annotation_position="top right"
+)
+
+fig1.update_layout(height=450)
+st.plotly_chart(fig1, use_container_width=True)
+
+st.markdown("---")
+
+# ── Chart 2: Contracted vs Employed Hours (Question 2) ────────
+# Bar chart showing top 20 states by contracted RN ratio
+# Answers: which states rely most on agency/contracted nurses?
+# High contracted ratio = potential overtime cost concern
+
+st.subheader("Q2 — Contracted vs Employed RN Hours by State")
+st.markdown(
+    "States with high contracted ratios rely heavily on agency nurses "
+    "— typically more expensive than employed staff."
+)
+
+# aggregate to state level
+df_state_contract = df_filtered.groupby("STATE").agg(
+    avg_contracted=("avg_contracted_rn_ratio", "mean"),
+    avg_employed=("total_employed_RN_hours", "sum"),
+    avg_contract_hrs=("total_contracted_RN_hours", "sum"),
+    facility_count=("PROVNUM", "count")
+).reset_index()
+
+df_state_contract["contracted_pct"] = (
+    df_state_contract["avg_contracted"] * 100
+).round(1)
+
+df_state_contract = df_state_contract.sort_values(
+    "contracted_pct", ascending=False
+).head(20)
+
+fig2 = px.bar(
+    df_state_contract,
+    x="STATE",
+    y="contracted_pct",
+    color="contracted_pct",
+    color_continuous_scale="Reds",
+    labels={
+        "STATE": "State",
+        "contracted_pct": "Avg Contracted RN Ratio (%)"
+    },
+    hover_data=["facility_count"]
+)
+
+fig2.update_layout(height=400, coloraxis_showscale=False)
+st.plotly_chart(fig2, use_container_width=True)
+
+st.markdown("---")
+
+# ── Chart 3: Avg Staffing by State and Ownership (Question 3) ─
+# Two charts side by side using st.columns()
+# Left: CNA hours by state (top 15 and bottom 15)
+# Right: CNA hours by ownership type
+
+st.subheader("Q3 — Average Staffing by State and Ownership Type")
+
+col_left, col_right = st.columns(2)
+
+with col_left:
+    st.markdown("**CNA Hours by State (bottom 15 — most understaffed)**")
+
+    df_by_state = df_filtered.groupby("STATE").agg(
+        avg_cna=("avg_CNA_hrs_per_patient", "mean"),
+        facility_count=("PROVNUM", "count")
+    ).reset_index().sort_values("avg_cna")
+
+    # bottom 15 most understaffed states
+    df_bottom_states = df_by_state.head(15)
+
+    fig3a = px.bar(
+        df_bottom_states,
+        x="avg_cna",
+        y="STATE",
+        orientation="h",     # horizontal bar chart
+        color="avg_cna",
+        color_continuous_scale="RdYlGn",
+        labels={
+            "avg_cna": "Avg CNA Hrs / Patient",
+            "STATE": "State"
+        }
+    )
+    fig3a.add_vline(
+        x=2.45,
+        line_dash="dash",
+        line_color="red",
+        annotation_text="CMS Min"
+    )
+    fig3a.update_layout(height=450, coloraxis_showscale=False)
+    st.plotly_chart(fig3a, use_container_width=True)
+
+with col_right:
+    st.markdown("**CNA Hours by Ownership Type**")
+
+    df_by_ownership = df_filtered.groupby("ownership_type").agg(
+        avg_cna=("avg_CNA_hrs_per_patient", "mean"),
+        facility_count=("PROVNUM", "count")
+    ).reset_index().sort_values("avg_cna")
+
+    fig3b = px.bar(
+        df_by_ownership,
+        x="avg_cna",
+        y="ownership_type",
+        orientation="h",
+        color="avg_cna",
+        color_continuous_scale="RdYlGn",
+        labels={
+            "avg_cna": "Avg CNA Hrs / Patient",
+            "ownership_type": "Ownership Type"
+        },
+        hover_data=["facility_count"]
+    )
+    fig3b.add_vline(
+        x=2.45,
+        line_dash="dash",
+        line_color="red",
+        annotation_text="CMS Min"
+    )
+    fig3b.update_layout(height=450, coloraxis_showscale=False)
+    st.plotly_chart(fig3b, use_container_width=True)
+
+st.markdown("---")
+
+# ── Chart 4: Staffing trends over time (Question 4) ───────────
+# Line chart using the daily staffing_metrics Gold table
+# Shows average staffing levels change week by week
+# Answers the time-series / trends question
+
+st.subheader("Q4 — Staffing Trends Over Time (Q2 2024)")
+st.markdown(
+    "Weekly average staffing hours per patient across selected facilities."
+)
+
+# filter staffing data to match selected states
+df_staffing_filtered = df_staffing[
+    df_staffing["STATE"].isin(selected_states)
+].copy()
+
+# aggregate to weekly level — resample by week
+# groupby WorkDate then resample
+df_staffing_filtered["week"] = df_staffing_filtered[
+    "WorkDate"
+].dt.to_period("W").dt.start_time
+
+df_weekly = df_staffing_filtered.groupby("week").agg(
+    avg_cna=("CNA_hrs_per_patient", "mean"),
+    avg_rn=("RN_hrs_per_patient", "mean"),
+    avg_total=("total_hrs_per_patient", "mean"),
+).reset_index()
+
+# melt from wide to long format for plotly
+# pandas melt = unpivot — turns multiple columns into rows
+# needed for plotly to show multiple lines on one chart
+df_weekly_long = df_weekly.melt(
+    id_vars="week",
+    value_vars=["avg_cna", "avg_rn", "avg_total"],
+    var_name="Staff Type",
+    value_name="Hrs per Patient"
+)
+
+# rename for cleaner legend labels
+df_weekly_long["Staff Type"] = df_weekly_long["Staff Type"].map({
+    "avg_cna":   "CNA",
+    "avg_rn":    "RN",
+    "avg_total": "Total Nurses"
+})
+
+fig4 = px.line(
+    df_weekly_long,
+    x="week",
+    y="Hrs per Patient",
+    color="Staff Type",
+    labels={"week": "Week"},
+    color_discrete_map={
+        "CNA": "#3b82f6",
+        "RN": "#22c55e",
+        "Total Nurses": "#f59e0b"
+    }
+)
+
+# add CMS minimum reference lines
+fig4.add_hline(
+    y=2.45, line_dash="dot", line_color="#3b82f6",
+    annotation_text="CNA min", annotation_position="right"
+)
+fig4.add_hline(
+    y=0.55, line_dash="dot", line_color="#22c55e",
+    annotation_text="RN min", annotation_position="right"
+)
+
+fig4.update_layout(height=400)
+st.plotly_chart(fig4, use_container_width=True)
+
+st.markdown("---")
+
+# ── Footer ────────────────────────────────────────────────────
+st.caption(
+    "Data source: CMS Nursing Home Staffing (PBJ) Q2 2024 | "
+    "Pipeline: AWS Glue + Delta Lake on S3 | "
+    "Dashboard: Streamlit"
+)
