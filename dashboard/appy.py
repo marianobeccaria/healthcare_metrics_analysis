@@ -114,3 +114,70 @@ with st.expander("Preview facility data (first 5 rows)"):
 
 with st.expander("Preview staffing data (first 5 rows)"):
     st.dataframe(df_staffing.head())
+
+# ── Sidebar ───────────────────────────────────────────────────
+# st.sidebar.anything() renders in the left panel
+# All the same widgets work — multiselect, slider, etc.
+
+st.sidebar.title("Filters")
+st.sidebar.markdown("---")
+
+# ── State filter ──────────────────────────────────────────────
+# st.sidebar.multiselect() lets users pick multiple states
+# default=all_states means all are selected on first load
+all_states = sorted(df_facility["STATE"].unique())
+
+selected_states = st.sidebar.multiselect(
+    "Filter by State",
+    options=all_states,
+    default=all_states        # all selected by default
+)
+
+# ── Ownership type filter ─────────────────────────────────────
+# dropna() removes null ownership values before getting unique
+ownership_types = sorted(
+    df_facility["ownership_type"].dropna().unique()
+)
+
+selected_ownership = st.sidebar.multiselect(
+    "Filter by Ownership Type",
+    options=ownership_types,
+    default=ownership_types   # all selected by default
+)
+
+# ── CMS compliance filter ─────────────────────────────────────
+# st.sidebar.checkbox() returns True or False
+show_understaffed_only = st.sidebar.checkbox(
+    "Show chronically understaffed only",
+    value=False               # unchecked by default
+)
+
+st.sidebar.markdown("---")
+
+# ── Apply filters to dataframe ────────────────────────────────
+# Standard pandas boolean indexing —
+# Every time a filter changes, Streamlit reruns the script
+# and this block re-filters the dataframe with new values.
+df_filtered = df_facility[
+    (df_facility["STATE"].isin(selected_states)) &
+    (df_facility["ownership_type"].isin(selected_ownership))
+].copy()
+
+# apply optional understaffed filter
+if show_understaffed_only:
+    df_filtered = df_filtered[
+        df_filtered["chronically_understaffed"] == True
+    ]
+
+# ── Sidebar summary ───────────────────────────────────────────
+# st.sidebar.metric() shows a KPI in the sidebar
+# Showing how many facilities match current filters
+st.sidebar.metric(
+    "Facilities shown",
+    f"{len(df_filtered):,}"
+)
+st.sidebar.metric(
+    "States selected",
+    f"{df_filtered['STATE'].nunique()}"
+)
+st.sidebar.caption(f"Quarter: {df_facility['quarter'].iloc[0]}")
