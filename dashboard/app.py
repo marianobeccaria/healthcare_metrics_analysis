@@ -229,7 +229,7 @@ st.markdown("---")
 # ── Stage 5: Charts ───────────────────────────────────────────
 # We use Plotly Express for all charts.
 # st.plotly_chart() renders a Plotly figure in Streamlit.
-# use_container_width=True makes the chart fill its column.
+# width="stretch" makes the chart fill its column.
 
 # ── Chart 1: Staffing vs Occupancy (Question 1) ───────────────
 # Scatter plot — each dot is one facility
@@ -245,8 +245,14 @@ st.markdown(
     "Red = chronically understaffed (below CMS minimum >50% of days)."
 )
 
+# filter out occupancy outliers > 1.0 for cleaner chart
+# these are data anomalies — more patients than certified beds
+df_chart1 = df_filtered[
+    df_filtered["avg_bed_occupancy_rate"] <= 1.0
+].copy()
+
 fig1 = px.scatter(
-    df_filtered,
+    df_chart1,
     x="avg_bed_occupancy_rate",
     y="avg_CNA_hrs_per_patient",
     color="chronically_understaffed",
@@ -271,7 +277,7 @@ fig1.add_hline(
 )
 
 fig1.update_layout(height=450)
-st.plotly_chart(fig1, use_container_width=True)
+st.plotly_chart(fig1, width="stretch")
 
 st.markdown("---")
 
@@ -316,7 +322,7 @@ fig2 = px.bar(
 )
 
 fig2.update_layout(height=400, coloraxis_showscale=False)
-st.plotly_chart(fig2, use_container_width=True)
+st.plotly_chart(fig2, width="stretch")
 
 st.markdown("---")
 
@@ -359,7 +365,7 @@ with col_left:
         annotation_text="CMS Min"
     )
     fig3a.update_layout(height=450, coloraxis_showscale=False)
-    st.plotly_chart(fig3a, use_container_width=True)
+    st.plotly_chart(fig3a, width="stretch")
 
 with col_right:
     st.markdown("**CNA Hours by Ownership Type**")
@@ -389,7 +395,7 @@ with col_right:
         annotation_text="CMS Min"
     )
     fig3b.update_layout(height=450, coloraxis_showscale=False)
-    st.plotly_chart(fig3b, use_container_width=True)
+    st.plotly_chart(fig3b, width="stretch")
 
 st.markdown("---")
 
@@ -461,7 +467,7 @@ fig4.add_hline(
 )
 
 fig4.update_layout(height=400)
-st.plotly_chart(fig4, use_container_width=True)
+st.plotly_chart(fig4, width="stretch")
 
 st.markdown("---")
 
