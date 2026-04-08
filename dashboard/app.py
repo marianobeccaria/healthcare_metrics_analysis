@@ -225,7 +225,6 @@ with col8:
     )
 
 st.markdown("---")
-st.info("Charts coming in Stage 5...")
 
 # ── Stage 5: Charts ───────────────────────────────────────────
 # We use Plotly Express for all charts.
