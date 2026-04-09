@@ -134,6 +134,17 @@ st.title("🏥 Healthcare Staffing Metrics")
 st.markdown("**CMS Nursing Home Staffing Data — Q2 2024**")
 st.markdown("---")
 
+# ── Guard against empty filter selection ──────────────────────
+# If user deselects all states or ownership types,
+# df_filtered is empty — show a warning and stop the script
+# rather than letting division by zero errors crash the app
+if len(df_filtered) == 0:
+    st.warning(
+        "No facilities match the current filters. "
+        "Please select at least one state and ownership type."
+    )
+    st.stop()
+
 # ── Stage 4: KPI cards ────────────────────────────────────────
 # st.columns(4) divides the page into 4 equal columns.
 # delta_color="normal" → green if positive, red if negative
@@ -477,3 +488,78 @@ st.caption(
     "Pipeline: AWS Glue + Delta Lake on S3 | "
     "Dashboard: Streamlit"
 )
+
+# ── Stage 6: Facility drill-down table ───────────────────────
+# Let users explore individual facility data.
+# st.dataframe() renders an interactive sortable table —
+# users can click column headers to sort, scroll, and search.
+
+st.subheader("Facility Detail — Drill Down")
+st.markdown(
+    "Sort by any column. "
+    "Click a column header to sort ascending/descending."
+)
+
+# select and rename columns for clean display
+df_table = df_filtered[[
+    "PROVNUM", "PROVNAME", "STATE", "CITY",
+    "ownership_type", "certified_beds",
+    "avg_daily_census", "avg_bed_occupancy_rate",
+    "avg_CNA_hrs_per_patient", "avg_RN_hrs_per_patient",
+    "avg_total_hrs_per_patient", "pct_days_meeting_cms",
+    "chronically_understaffed", "overall_rating",
+    "avg_contracted_rn_ratio", "weekend_staffing_gap"
+]].copy()
+
+# round numeric columns for cleaner display
+numeric_cols = [
+    "avg_bed_occupancy_rate", "avg_CNA_hrs_per_patient",
+    "avg_RN_hrs_per_patient", "avg_total_hrs_per_patient",
+    "avg_contracted_rn_ratio", "weekend_staffing_gap"
+]
+df_table[numeric_cols] = df_table[numeric_cols].round(2)
+
+# rename columns for readability
+df_table = df_table.rename(columns={
+    "PROVNUM":                  "CCN",
+    "PROVNAME":                 "Facility Name",
+    "STATE":                    "State",
+    "CITY":                     "City",
+    "ownership_type":           "Ownership",
+    "certified_beds":           "Beds",
+    "avg_daily_census":         "Avg Census",
+    "avg_bed_occupancy_rate":   "Occupancy",
+    "avg_CNA_hrs_per_patient":  "CNA Hrs",
+    "avg_RN_hrs_per_patient":   "RN Hrs",
+    "avg_total_hrs_per_patient":"Total Hrs",
+    "pct_days_meeting_cms":     "% Days Meeting CMS",
+    "chronically_understaffed": "Understaffed",
+    "overall_rating":           "Star Rating",
+    "avg_contracted_rn_ratio":  "Contracted Ratio",
+    "weekend_staffing_gap":     "Weekend Gap"
+})
+
+# sort by CNA hours ascending — worst staffed at top
+df_table = df_table.sort_values("CNA Hrs")
+
+# st.dataframe() with height parameter limits initial view
+# user can scroll to see more rows
+st.dataframe(
+    df_table,
+    width="stretch",
+    height=400,
+    hide_index=True
+)
+
+# download button — lets users export filtered data as CSV
+# st.download_button() creates a button that downloads a file
+csv = df_table.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download filtered data as CSV",
+    data=csv,
+    file_name=f"healthcare_staffing_filtered.csv",
+    mime="text/csv"
+)
+
+st.markdown("---")
+
