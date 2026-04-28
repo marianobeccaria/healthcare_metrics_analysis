@@ -179,15 +179,89 @@ class HealthcareMetricsStack(Stack):
         # ── 5. Glue Spark job — Silver to Gold ───────────────
         # Reads Silver Delta Lake, calculates all staffing metrics
         # against CMS thresholds, writes Gold Delta Lake tables
-        silver_to_gold_job = glue.CfnJob(
-            self, "SilverToGoldJob",
-            name="healthcare-silver-to-gold",
-            description="Calculate staffing metrics from Silver, write Delta Lake to Gold",
+        # silver_to_gold_job = glue.CfnJob(
+        #     self, "SilverToGoldJob",
+        #     name="healthcare-silver-to-gold",
+        #     description="Calculate staffing metrics from Silver, write Delta Lake to Gold",
+        #     role=glue_role.role_arn,
+        #     command=glue.CfnJob.JobCommandProperty(
+        #         name="glueetl",
+        #         python_version="3",
+        #         script_location=f"s3://{BUCKET_NAME}/scripts/glue_silver_to_gold.py"
+        #     ),
+        #     default_arguments={
+        #         "--BUCKET_NAME":        BUCKET_NAME,
+        #         "--SILVER_PATH":        f"s3://{BUCKET_NAME}/silver/staffing/",
+        #         "--GOLD_PATH":          f"s3://{BUCKET_NAME}/gold/",
+        #         "--QUARTER":            QUARTER,
+        #         "--datalake-formats":   "delta",
+        #         "--conf":               (
+        #             "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension"
+        #             " --conf spark.sql.catalog.spark_catalog="
+        #             "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        #         ),
+        #         "--enable-job-insights":              "true",
+        #         "--enable-continuous-cloudwatch-log": "true",
+        #         "--enable-metrics":                   "true",
+        #         "--job-language":                     "python",
+        #     },
+        #     glue_version="4.0",
+        #     worker_type="G.1X",
+        #     number_of_workers=2,
+        #     max_retries=1,
+        #     timeout=60,
+        #     execution_property=glue.CfnJob.ExecutionPropertyProperty(
+        #         max_concurrent_runs=1
+        #     )
+        # )
+
+        # ── 5a. Glue Spark job — Silver to Facility Summary ──────
+        silver_to_facility_job = glue.CfnJob(
+            self, "SilverToFacilityJob",
+            name="healthcare-silver-to-facility-summary",
+            description="Aggregate Silver to facility level — write Gold facility_summary Delta table",
             role=glue_role.role_arn,
             command=glue.CfnJob.JobCommandProperty(
                 name="glueetl",
                 python_version="3",
-                script_location=f"s3://{BUCKET_NAME}/scripts/glue_silver_to_gold.py"
+                script_location=f"s3://{BUCKET_NAME}/scripts/glue_silver_to_facility_summary.py"
+            ),
+            default_arguments={
+                "--BUCKET_NAME":        BUCKET_NAME,
+                "--SILVER_PATH":        f"s3://{BUCKET_NAME}/silver/staffing/",
+                "--GOLD_PATH":          f"s3://{BUCKET_NAME}/gold/",
+                "--QUARTER":            QUARTER,
+                "--datalake-formats":   "delta",
+                "--conf":               (
+                    "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension"
+                    " --conf spark.sql.catalog.spark_catalog="
+                    "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+                ),
+                "--enable-job-insights":              "true",
+                "--enable-continuous-cloudwatch-log": "true",
+                "--enable-metrics":                   "true",
+                "--job-language":                     "python",
+            },
+            glue_version="4.0",
+            worker_type="G.1X",
+            number_of_workers=2,
+            max_retries=1,
+            timeout=60,
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(
+                max_concurrent_runs=1
+            )
+        )
+
+        # ── 5b. Glue Spark job — Silver to Staffing Metrics ──────
+        silver_to_staffing_job = glue.CfnJob(
+            self, "SilverToStaffingJob",
+            name="healthcare-silver-to-staffing-metrics",
+            description="Write daily Silver rows to Gold staffing_metrics Delta table",
+            role=glue_role.role_arn,
+            command=glue.CfnJob.JobCommandProperty(
+                name="glueetl",
+                python_version="3",
+                script_location=f"s3://{BUCKET_NAME}/scripts/glue_silver_to_staffing_metrics.py"
             ),
             default_arguments={
                 "--BUCKET_NAME":        BUCKET_NAME,
@@ -273,10 +347,38 @@ class HealthcareMetricsStack(Stack):
 
         # Trigger 3: Conditional — starts Silver→Gold
         # only fires when Bronze→Silver SUCCEEDS
-        gold_trigger = glue.CfnTrigger(
-            self, "GoldTrigger",
-            name="healthcare-gold-trigger",
-            description="Starts Silver to Gold after Bronze to Silver succeeds",
+        
+        # gold_trigger = glue.CfnTrigger(
+        #     self, "GoldTrigger",
+        #     name="healthcare-gold-trigger",
+        #     description="Starts Silver to Gold after Bronze to Silver succeeds",
+        #     workflow_name=workflow.name,
+        #     type="CONDITIONAL",
+        #     start_on_creation=True,
+        #     predicate=glue.CfnTrigger.PredicateProperty(
+        #         logical="AND",
+        #         conditions=[glue.CfnTrigger.ConditionProperty(
+        #             job_name=bronze_to_silver_job.name,
+        #             logical_operator="EQUALS",
+        #             state="SUCCEEDED"
+        #         )]
+        #     ),
+        #     actions=[glue.CfnTrigger.ActionProperty(
+        #         job_name=silver_to_gold_job.name,
+        #         timeout=60
+        #     )]
+        # )
+        # gold_trigger.add_dependency(workflow)
+        # gold_trigger.add_dependency(bronze_to_silver_job)
+        # gold_trigger.add_dependency(silver_to_gold_job)
+
+
+        # Trigger 3a: Conditional — starts Silver→FacilitySummary
+        # fires in parallel with Trigger 3b after Bronze→Silver succeeds
+        facility_trigger = glue.CfnTrigger(
+            self, "FacilityTrigger",
+            name="healthcare-facility-trigger",
+            description="Starts Silver to Facility Summary after Bronze to Silver succeeds",
             workflow_name=workflow.name,
             type="CONDITIONAL",
             start_on_creation=True,
@@ -289,25 +391,53 @@ class HealthcareMetricsStack(Stack):
                 )]
             ),
             actions=[glue.CfnTrigger.ActionProperty(
-                job_name=silver_to_gold_job.name,
+                job_name=silver_to_facility_job.name,
                 timeout=60
             )]
         )
-        gold_trigger.add_dependency(workflow)
-        gold_trigger.add_dependency(bronze_to_silver_job)
-        gold_trigger.add_dependency(silver_to_gold_job)
+        facility_trigger.add_dependency(workflow)
+        facility_trigger.add_dependency(bronze_to_silver_job)
+        facility_trigger.add_dependency(silver_to_facility_job)
 
+        # Trigger 3b: Conditional — starts Silver→StaffingMetrics
+        # fires in parallel with Trigger 3a after Bronze→Silver succeeds
+        staffing_trigger = glue.CfnTrigger(
+            self, "StaffingTrigger",
+            name="healthcare-staffing-trigger",
+            description="Starts Silver to Staffing Metrics after Bronze to Silver succeeds",
+            workflow_name=workflow.name,
+            type="CONDITIONAL",
+            start_on_creation=True,
+            predicate=glue.CfnTrigger.PredicateProperty(
+                logical="AND",
+                conditions=[glue.CfnTrigger.ConditionProperty(
+                    job_name=bronze_to_silver_job.name,
+                    logical_operator="EQUALS",
+                    state="SUCCEEDED"
+                )]
+            ),
+            actions=[glue.CfnTrigger.ActionProperty(
+                job_name=silver_to_staffing_job.name,
+                timeout=60
+            )]
+        )
+        staffing_trigger.add_dependency(workflow)
+        staffing_trigger.add_dependency(bronze_to_silver_job)
+        staffing_trigger.add_dependency(silver_to_staffing_job)
 
         # ── 8. CloudWatch Log Groups ──────────────────────────
         # One log group per Glue job.
         # Glue writes logs here automatically when jobs run.
         # Retained for 30 days then auto-deleted to control costs.
-        from aws_cdk import aws_logs as logs
+
+        # from aws_cdk import aws_logs as logs
 
         log_groups = [
             ("IngestionLogs",      "/aws-glue/healthcare-ingestion"),
             ("BronzeToSilverLogs", "/aws-glue/healthcare-bronze-to-silver"),
-            ("SilverToGoldLogs",   "/aws-glue/healthcare-silver-to-gold"),
+            # ("SilverToGoldLogs",   "/aws-glue/healthcare-silver-to-gold"),
+            ("FacilitySummaryLogs",   "/aws-glue/healthcare-silver-to-facility-summary"),
+            ("StaffingMetricsLogs",   "/aws-glue/healthcare-silver-to-staffing-metrics"),
         ]
 
         for construct_id, log_group_name in log_groups:
