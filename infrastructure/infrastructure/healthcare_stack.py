@@ -3,11 +3,14 @@ from dotenv import load_dotenv
 from aws_cdk import (
     Stack,
     RemovalPolicy,
+    Duration,
+    CfnOutput,    
     aws_iam as iam,
     aws_s3 as s3,
     aws_s3_deployment as s3deploy,
     aws_glue as glue,
     aws_logs as logs,
+    aws_ec2 as ec2,
 )
 from constructs import Construct
 
@@ -447,3 +450,163 @@ class HealthcareMetricsStack(Stack):
                 retention=logs.RetentionDays.ONE_MONTH,
                 removal_policy=RemovalPolicy.DESTROY
             )
+
+        # ── 9. EC2 — Streamlit Dashboard ─────────────────────
+        # t3.small is sufficient for Streamlit serving Gold data
+        # from S3
+
+        # ── 9a. VPC — use default VPC ────────────────────────
+        # Use the default VPC 
+        vpc = ec2.Vpc.from_lookup(
+            self, "DefaultVpc",
+            is_default=True
+        )
+
+        # ── 9b. Security group ────────────────────────────────
+        # Controls traffic that can reach the EC2 instance
+        dashboard_sg = ec2.SecurityGroup(
+            self, "DashboardSG",
+            vpc=vpc,
+            description="Security group for Healthcare Metrics Streamlit dashboard",
+            allow_all_outbound=True     # EC2 can reach S3 and internet
+        )
+
+        # allow SSH from anywhere — for management
+        dashboard_sg.add_ingress_rule(
+            peer=ec2.Peer.any_ipv4(),
+            connection=ec2.Port.tcp(22),
+            description="SSH access"
+        )
+
+        # allow Streamlit port from anywhere — for dashboard access
+        dashboard_sg.add_ingress_rule(
+            peer=ec2.Peer.any_ipv4(),
+            connection=ec2.Port.tcp(8501),
+            description="Streamlit dashboard access"
+        )
+
+        # ── 9c. IAM role for EC2 ──────────────────────────────
+        # EC2 needs to read from S3 Gold tables
+        # Using IAM role is more secure than storing AWS keys on the instance
+        ec2_role = iam.Role(
+            self, "DashboardEC2Role",
+            role_name="healthcare-dashboard-ec2-role",
+            assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
+            description="EC2 role for Streamlit dashboard. Read access to S3 Gold",
+        )
+
+        # grant read access to Gold tables in S3
+        bucket.grant_read(ec2_role)
+
+        # attach SSM policy — allows you to connect via AWS Systems Manager
+        # as an alternative to SSH if needed
+        ec2_role.add_managed_policy(
+            iam.ManagedPolicy.from_aws_managed_policy_name(
+                "AmazonSSMManagedInstanceCore"
+            )
+        )
+
+        # ── 9d. Key pair ──────────────────────────────────────
+        key_pair = ec2.KeyPair(
+            self, "DashboardKeyPair",
+            key_pair_name="healthcare-dashboard-key",
+            type=ec2.KeyPairType.RSA,
+        )
+
+        # ── 9e. User data — install and start Streamlit ───────
+        # User data runs automatically when the instance first boots.
+        # This installs all dependencies and starts the dashboard
+        # so it's ready immediately after launch.
+        user_data = ec2.UserData.for_linux()
+        user_data.add_commands(
+            # update system packages
+            "dnf update -y",
+
+            # install Python and pip
+            "dnf install -y python3 python3-pip git",
+
+            # install Streamlit and dependencies
+            "pip3 install streamlit plotly pandas pyarrow "
+            "boto3 s3fs fsspec python-dotenv",
+
+            # create app directory
+            "mkdir -p /home/ec2-user/dashboard",
+
+            # create the .env file with S3 paths
+            f"echo 'GOLD_FACILITY_PATH=s3://{BUCKET_NAME}/gold/facility_summary/' "
+            f"> /home/ec2-user/dashboard/.env",
+            f"echo 'GOLD_STAFFING_PATH=s3://{BUCKET_NAME}/gold/staffing_metrics/' "
+            f">> /home/ec2-user/dashboard/.env",
+            f"echo 'AWS_DEFAULT_REGION=us-east-1' "
+            f">> /home/ec2-user/dashboard/.env",
+
+            # pull app.py from S3 scripts folder
+            # we'll upload it there after this deploy
+            f"aws s3 cp s3://{BUCKET_NAME}/scripts/app.py "
+            f"/home/ec2-user/dashboard/app.py",
+
+            # create systemd service so Streamlit restarts on reboot
+            "cat > /etc/systemd/system/streamlit.service << 'EOF'\n"
+            "[Unit]\n"
+            "Description=Healthcare Metrics Streamlit Dashboard\n"
+            "After=network.target\n"
+            "[Service]\n"
+            "User=ec2-user\n"
+            "WorkingDirectory=/home/ec2-user/dashboard\n"
+            "ExecStart=/usr/local/bin/streamlit run app.py "
+            "--server.port 8501 --server.address 0.0.0.0\n"
+            "Restart=always\n"
+            "[Install]\n"
+            "WantedBy=multi-user.target\n"
+            "EOF",
+
+            # enable and start the service
+            "systemctl daemon-reload",
+            "systemctl enable streamlit",
+            "systemctl start streamlit",
+        )
+
+        # ── 9f. EC2 instance ──────────────────────────────────
+        instance = ec2.Instance(
+            self, "DashboardInstance",
+            instance_type=ec2.InstanceType.of(
+                ec2.InstanceClass.T3,
+                ec2.InstanceSize.SMALL      # 2 vCPU, 2GB RAM — sufficient for Streamlit
+            ),
+            machine_image=ec2.MachineImage.latest_amazon_linux2023(),
+            vpc=vpc,
+            security_group=dashboard_sg,
+            role=ec2_role,
+            key_pair=key_pair,
+            user_data=user_data,
+            block_devices=[
+                ec2.BlockDevice(
+                    device_name="/dev/xvda",
+                    volume=ec2.BlockDeviceVolume.ebs(
+                        20,                             # 20GB storage
+                        volume_type=ec2.EbsDeviceVolumeType.GP3,
+                        delete_on_termination=True      # clean up on cdk destroy
+                    )
+                )
+            ]
+        )
+
+        # ── 9g. Stack outputs ─────────────────────────────────
+        # CfnOutput prints useful info after cdk deploy completes
+        CfnOutput(
+            self, "DashboardURL",
+            value=f"http://{instance.instance_public_ip}:8501",
+            description="Streamlit dashboard URL"
+        )
+
+        CfnOutput(
+            self, "SSHCommand",
+            value=f"ssh -i ~/.ssh/healthcare-dashboard-key.pem ec2-user@{instance.instance_public_ip}",
+            description="SSH command to connect to the dashboard instance"
+        )
+
+        CfnOutput(
+            self, "InstanceId",
+            value=instance.instance_id,
+            description="EC2 instance ID"
+        )
