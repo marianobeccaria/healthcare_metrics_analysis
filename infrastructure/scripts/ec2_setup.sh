@@ -19,6 +19,17 @@ level = "error"
 showErrorDetails = false
 EOF
 
+echo "=== Creating Streamlit config for root ==="
+mkdir -p /root/.streamlit
+cat > /root/.streamlit/config.toml << 'EOF'
+[global]
+showWarningOnDirectExecution = false
+[logger]
+level = "error"
+[client]
+showErrorDetails = false
+EOF
+
 echo "=== Downloading app.py from S3 ==="
 python3 << 'PYEOF'
 import sys
