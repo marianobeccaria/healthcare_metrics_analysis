@@ -291,7 +291,8 @@ fig1.add_hline(
 )
 
 fig1.update_layout(height=450)
-st.plotly_chart(fig1, width="stretch")
+st.plotly_chart(fig1, width="stretch", config={"displayModeBar": False})
+
 
 st.markdown("---")
 
@@ -336,7 +337,7 @@ fig2 = px.bar(
 )
 
 fig2.update_layout(height=400, coloraxis_showscale=False)
-st.plotly_chart(fig2, width="stretch")
+st.plotly_chart(fig2, width="stretch", config={"displayModeBar": False})
 
 st.markdown("---")
 
@@ -379,7 +380,7 @@ with col_left:
         annotation_text="CMS Min"
     )
     fig3a.update_layout(height=450, coloraxis_showscale=False)
-    st.plotly_chart(fig3a, width="stretch")
+    st.plotly_chart(fig3a, width="stretch", config={"displayModeBar": False})
 
 with col_right:
     st.markdown("**CNA Hours by Ownership Type**")
@@ -409,7 +410,7 @@ with col_right:
         annotation_text="CMS Min"
     )
     fig3b.update_layout(height=450, coloraxis_showscale=False)
-    st.plotly_chart(fig3b, width="stretch")
+    st.plotly_chart(fig3b, width="stretch", config={"displayModeBar": False})
 
 st.markdown("---")
 
@@ -481,7 +482,7 @@ fig4.add_hline(
 )
 
 fig4.update_layout(height=400)
-st.plotly_chart(fig4, width="stretch")
+st.plotly_chart(fig4, width="stretch", config={"displayModeBar": False})
 
 st.markdown("---")
 
