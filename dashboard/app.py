@@ -13,6 +13,9 @@ import pandas as pd
 import plotly.express as px
 import os
 from dotenv import load_dotenv
+import warnings
+warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 load_dotenv()
 

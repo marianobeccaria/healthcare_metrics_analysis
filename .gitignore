@@ -40,8 +40,10 @@ secrets.yaml
 .DS_Store
 Thumbs.db
 desktop.ini
+sys
 
 # ── IDE files ────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
+.claude

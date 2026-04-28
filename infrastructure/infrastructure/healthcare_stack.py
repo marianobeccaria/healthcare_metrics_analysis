@@ -108,8 +108,22 @@ class HealthcareMetricsStack(Stack):
                 retain_on_delete=True,   # never delete folders on cdk destroy
                 prune=False
             )
+        # ── 3b. Upload EC2 setup script to S3 ────────────────
+        # BucketDeployment keeps the script in sync —
+        # any changes to ec2_setup.sh are uploaded on cdk deploy
 
-        # ── 3. Glue Python Shell job — ingestion ──────────────
+        s3deploy.BucketDeployment(
+            self, "EC2SetupScript",
+            sources=[s3deploy.Source.asset(
+                os.path.join(os.path.dirname(__file__), "..", "scripts")
+            )],
+            destination_bucket=bucket,
+            destination_key_prefix="scripts/",
+            retain_on_delete=True,
+            prune=False
+        )
+
+        # ── 4. Glue Python Shell job — ingestion ──────────────
         # Lightweight Python job — no Spark, no cluster
         # Connects to Google Drive API, checks for new quarters,
         # downloads CSVs directly to S3 Bronze
@@ -139,7 +153,7 @@ class HealthcareMetricsStack(Stack):
             )
         )
 
-        # ── 4. Glue Spark job — Bronze to Silver ─────────────
+        # ── 5. Glue Spark job — Bronze to Silver ─────────────
         # Full PySpark job — reads raw CSVs from Bronze, applies
         # all EDA-informed transformations, writes Delta Lake to Silver
         bronze_to_silver_job = glue.CfnJob(
@@ -179,7 +193,7 @@ class HealthcareMetricsStack(Stack):
             )
         )
 
-        # ── 5. Glue Spark job — Silver to Gold ───────────────
+        # ── 6. Glue Spark job — Silver to Gold ───────────────
         # Reads Silver Delta Lake, calculates all staffing metrics
         # against CMS thresholds, writes Gold Delta Lake tables
         # silver_to_gold_job = glue.CfnJob(
@@ -218,7 +232,7 @@ class HealthcareMetricsStack(Stack):
         #     )
         # )
 
-        # ── 5a. Glue Spark job — Silver to Facility Summary ──────
+        # ── 6a. Glue Spark job — Silver to Facility Summary ──────
         silver_to_facility_job = glue.CfnJob(
             self, "SilverToFacilityJob",
             name="healthcare-silver-to-facility-summary",
@@ -255,7 +269,7 @@ class HealthcareMetricsStack(Stack):
             )
         )
 
-        # ── 5b. Glue Spark job — Silver to Staffing Metrics ──────
+        # ── 6b. Glue Spark job — Silver to Staffing Metrics ──────
         silver_to_staffing_job = glue.CfnJob(
             self, "SilverToStaffingJob",
             name="healthcare-silver-to-staffing-metrics",
@@ -292,7 +306,7 @@ class HealthcareMetricsStack(Stack):
             )
         )
 
-        # ── 6. Glue Workflow ──────────────────────────────────
+        # ── 7. Glue Workflow ──────────────────────────────────
         # Single workflow that owns all three jobs.
         # Acts as the container — triggers are attached to it.
         workflow = glue.CfnWorkflow(
@@ -302,7 +316,7 @@ class HealthcareMetricsStack(Stack):
             max_concurrent_runs=1   # never run two full pipelines simultaneously
         )
 
-        # ── 7. Glue Triggers ──────────────────────────────────
+        # ── 8. Glue Triggers ──────────────────────────────────
         # Trigger 1: Schedule — starts the ingestion job
         # Runs quarterly: 1st of Jan, Apr, Jul, Oct at 6am UTC
         schedule_trigger = glue.CfnTrigger(
@@ -428,7 +442,7 @@ class HealthcareMetricsStack(Stack):
         staffing_trigger.add_dependency(bronze_to_silver_job)
         staffing_trigger.add_dependency(silver_to_staffing_job)
 
-        # ── 8. CloudWatch Log Groups ──────────────────────────
+        # ── 9. CloudWatch Log Groups ──────────────────────────
         # One log group per Glue job.
         # Glue writes logs here automatically when jobs run.
         # Retained for 30 days then auto-deleted to control costs.
@@ -451,18 +465,18 @@ class HealthcareMetricsStack(Stack):
                 removal_policy=RemovalPolicy.DESTROY
             )
 
-        # ── 9. EC2 — Streamlit Dashboard ─────────────────────
+        # ── 10. EC2 — Streamlit Dashboard ─────────────────────
         # t3.small is sufficient for Streamlit serving Gold data
         # from S3
 
-        # ── 9a. VPC — use default VPC ────────────────────────
+        # ── 10a. VPC — use default VPC ────────────────────────
         # Use the default VPC 
         vpc = ec2.Vpc.from_lookup(
             self, "DefaultVpc",
             is_default=True
         )
 
-        # ── 9b. Security group ────────────────────────────────
+        # ── 10b. Security group ────────────────────────────────
         # Controls traffic that can reach the EC2 instance
         dashboard_sg = ec2.SecurityGroup(
             self, "DashboardSG",
@@ -485,7 +499,7 @@ class HealthcareMetricsStack(Stack):
             description="Streamlit dashboard access"
         )
 
-        # ── 9c. IAM role for EC2 ──────────────────────────────
+        # ── 10c. IAM role for EC2 ──────────────────────────────
         # EC2 needs to read from S3 Gold tables
         # Using IAM role is more secure than storing AWS keys on the instance
         ec2_role = iam.Role(
@@ -506,67 +520,35 @@ class HealthcareMetricsStack(Stack):
             )
         )
 
-        # ── 9d. Key pair ──────────────────────────────────────
+        # ── 10d. Key pair ──────────────────────────────────────
         key_pair = ec2.KeyPair(
             self, "DashboardKeyPair",
             key_pair_name="healthcare-dashboard-key",
             type=ec2.KeyPairType.RSA,
         )
 
-        # ── 9e. User data — install and start Streamlit ───────
-        # User data runs automatically when the instance first boots.
-        # This installs all dependencies and starts the dashboard
-        # so it's ready immediately after launch.
+        # ── 10e. User data — download and run setup script ────
+        # Setup script lives in S3 (infrastructure/scripts/ec2_setup.sh)
+        # uploaded via BucketDeployment in section 3b above.
+
         user_data = ec2.UserData.for_linux()
         user_data.add_commands(
-            # update system packages
+            # update system and install base packages
             "dnf update -y",
-
-            # install Python and pip
             "dnf install -y python3 python3-pip git",
 
-            # install Streamlit and dependencies
-            "pip3 install streamlit plotly pandas pyarrow "
-            "boto3 s3fs fsspec python-dotenv",
+            # download setup script from S3 using AWS CLI
+            # instance IAM role grants read access to the bucket
+            f"aws s3 cp s3://{BUCKET_NAME}/scripts/ec2_setup.sh "
+            f"/tmp/ec2_setup.sh",
 
-            # create app directory
-            "mkdir -p /home/ec2-user/dashboard",
-
-            # create the .env file with S3 paths
-            f"echo 'GOLD_FACILITY_PATH=s3://{BUCKET_NAME}/gold/facility_summary/' "
-            f"> /home/ec2-user/dashboard/.env",
-            f"echo 'GOLD_STAFFING_PATH=s3://{BUCKET_NAME}/gold/staffing_metrics/' "
-            f">> /home/ec2-user/dashboard/.env",
-            f"echo 'AWS_DEFAULT_REGION=us-east-1' "
-            f">> /home/ec2-user/dashboard/.env",
-
-            # pull app.py from S3 scripts folder
-            # we'll upload it there after this deploy
-            f"aws s3 cp s3://{BUCKET_NAME}/scripts/app.py "
-            f"/home/ec2-user/dashboard/app.py",
-
-            # create systemd service so Streamlit restarts on reboot
-            "cat > /etc/systemd/system/streamlit.service << 'EOF'\n"
-            "[Unit]\n"
-            "Description=Healthcare Metrics Streamlit Dashboard\n"
-            "After=network.target\n"
-            "[Service]\n"
-            "User=ec2-user\n"
-            "WorkingDirectory=/home/ec2-user/dashboard\n"
-            "ExecStart=/usr/local/bin/streamlit run app.py "
-            "--server.port 8501 --server.address 0.0.0.0\n"
-            "Restart=always\n"
-            "[Install]\n"
-            "WantedBy=multi-user.target\n"
-            "EOF",
-
-            # enable and start the service
-            "systemctl daemon-reload",
-            "systemctl enable streamlit",
-            "systemctl start streamlit",
+            # run setup script as root
+            # script handles su to ec2-user for pip installs
+            "chmod +x /tmp/ec2_setup.sh",
+            "bash /tmp/ec2_setup.sh",
         )
 
-        # ── 9f. EC2 instance ──────────────────────────────────
+        # ── 10f. EC2 instance ──────────────────────────────────
         instance = ec2.Instance(
             self, "DashboardInstance",
             instance_type=ec2.InstanceType.of(
@@ -591,7 +573,7 @@ class HealthcareMetricsStack(Stack):
             ]
         )
 
-        # ── 9g. Stack outputs ─────────────────────────────────
+        # ── 10g. Stack outputs ─────────────────────────────────
         # CfnOutput prints useful info after cdk deploy completes
         CfnOutput(
             self, "DashboardURL",
