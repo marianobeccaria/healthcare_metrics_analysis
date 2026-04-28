@@ -1,4 +1,4 @@
-name: ds4b_101p_dev
+name: p3.11.15
 channels:
   - conda-forge
   - defaults
@@ -343,4 +343,3 @@ dependencies:
       - watchdog==6.0.0
       - wordcloud==1.9.6
       - xarray==2026.2.0
-prefix: /home/maximus/anaconda3/envs/ds4b_101p_dev

@@ -468,4 +468,3 @@ dependencies:
       - yellowbrick==1.5
       - zope-event==6.1
       - zope-interface==8.2
-prefix: /home/maximus/anaconda3/envs/healthcare-cdk
