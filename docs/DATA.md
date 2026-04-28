@@ -58,7 +58,7 @@ PBJ file  ->  PROVNUM  (6-character string, e.g. "015009")
 All other ->  CMS Certification Number / CCN  (same 6-character value)
 ```
 
-> ⚠️ **Always load PROVNUM and CCN as strings in Python.**
+> **Always load PROVNUM and CCN as strings in Python.**
 > They contain leading zeros that are silently lost if loaded as integers.
 > Use: `dtype={"PROVNUM": str, "CCN": str}` in `pd.read_csv()`
 
@@ -69,7 +69,7 @@ All other ->  CMS Certification Number / CCN  (same 6-character value)
 Full column definitions for all files are documented in the official CMS data
 dictionary, a copy of which is stored in this repo:
 
-📄 `docs/NH_Data_Dictionary.pdf`
+`docs/NH_Data_Dictionary.pdf`
 
 ---
 

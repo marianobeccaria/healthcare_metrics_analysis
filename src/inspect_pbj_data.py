@@ -171,7 +171,7 @@ for col in hours_cols:
 zero_df = pd.DataFrame(zero_report).sort_values("Zero %", ascending=False)
 print(zero_df.to_string(index=False))
 
-print("\n💡 TIP: Columns with very high Zero % (like Hrs_MedAide, Hrs_NAtrn)")
+print("\n TIP: Columns with very high Zero % (like Hrs_MedAide, Hrs_NAtrn)")
 print("   are common because not all facilities use those staff types.")
 print("   This is normal — NOT a data quality issue.")
 
@@ -196,7 +196,7 @@ for col in key_cols[1:]:   # skip MDScensus
     n_over_500 = (df[col] > 500).sum()
     print(f"  {col:<15} max={max_val:>8.1f}   rows > 500hrs: {n_over_500}")
 
-print("\n💡 TIP: Values over 500 hours in a single day for one facility")
+print("\n TIP: Values over 500 hours in a single day for one facility")
 print("   are worth investigating — they may be data entry errors.")
 
 
@@ -301,25 +301,19 @@ KEY FINDINGS FROM THIS INSPECTION:
   Unique facilities : {n_facilities:,}
   States covered    : {n_states}
   Date range        : {df['WorkDate'].min().date()} → {df['WorkDate'].max().date()}
-  Duplicate rows    : {"None found ✓" if len(duplicates) == 0 else f"{len(duplicates)} found ⚠"}
-  Null values       : {"None found ✓" if missing_report.empty else f"{missing.sum()} total ⚠"}
+  Duplicate rows    : {"None found ✓" if len(duplicates) == 0 else f"{len(duplicates)} found "}
+  Null values       : {"None found ✓" if missing_report.empty else f"{missing.sum()} total "}
 
 COLUMN GROUPS:
   Identifier cols   : PROVNUM, PROVNAME, CITY, STATE, COUNTY_NAME, COUNTY_FIPS
   Time cols         : CY_Qtr, WorkDate
   Patient volume    : MDScensus
   Nursing hours     : {len(hours_cols)} columns (Hrs_RN, Hrs_LPN, Hrs_CNA, etc.)
-    ↳ Each split into: total, _emp (employed), _ctr (contracted)
 
 JOIN KEY FOR STEP 3:
   PROVNUM (this file) = CCN (NH_ProviderInfo and all other supporting files)
-  ⚠ Always keep PROVNUM as a STRING — never convert to integer!
+  Always keep PROVNUM as a STRING — never convert to integer!
 
-NEXT STEPS:
-  1. Run with full file (remove nrows=SAMPLE_ROWS) when ready
-  2. Download NH_ProviderInfo CSV and join on PROVNUM = CCN
-  3. Calculate nurse-to-patient ratio: (Hrs_RN + Hrs_LPN + Hrs_CNA) / MDScensus
-  4. Calculate bed occupancy rate: MDScensus / certified_beds (from ProviderInfo)
 ───────────────────────────────────────────────────────────
 Charts saved to: ./{OUTPUT_DIR}/
 """)
@@ -466,11 +460,6 @@ JOIN TEST SUMMARY FOR ARCHITECTURE PLANNING:
   Match rate        : {match_pct:.1f}%
   Unmatched rows    : {unmatched:,} facilities need investigation
   Columns gained    : bed count, star rating, ownership type, turnover
-
-  PIPELINE IMPLICATION:
-  The Gold layer in your AWS pipeline should always use a
-  LEFT JOIN so no staffing records are silently dropped.
-  Unmatched facilities should route to a separate audit table.
 -----------------------------------------------------------
 """)
 
@@ -478,8 +467,6 @@ JOIN TEST SUMMARY FOR ARCHITECTURE PLANNING:
         print(f"\nERROR: File not found at '{PROVIDER_INFO_PATH}'")
         print("  Update PROVIDER_INFO_PATH in CONFIG at the top of this script.")
 
-
-# %%
 
 # ============================================================
 # SECTION 12 — CORRELATIONS BETWEEN STAFFING AND QUALIT MEASURES
