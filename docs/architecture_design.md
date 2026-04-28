@@ -1,10 +1,10 @@
 # Healthcare Metrics Pipeline — Solution Design Document
 
 **Project:** Healthcare Metrics Pipeline  
-**Version:** 2.0 — Revised per SME Feedback  
+**Version:** 2.2 — Split Gold Jobs, EC2 Dashboard, End-to-End Test
 **Prepared by:** Mariano Beccaria
 **Date:** April 2026  
-**Status:** SME Approved
+**Status:** SME Approved — Pipeline Built, Tested, and Live
 
 ---
 
