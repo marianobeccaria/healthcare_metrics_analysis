@@ -25,6 +25,9 @@ class HealthcareMetricsStack(Stack):
 
         # ── CONFIG ────────────────────────────────────────────
         # Priority: CDK context flag → .env file → hardcoded default
+        AWS_ACCOUNT = os.environ.get("HEALTHCARE_AWS_ACCOUNT", "858477419022")
+        AWS_REGION = os.environ.get("HEALTHCARE_AWS_REGION", "us-east-1")
+        
         BUCKET_NAME = (
             self.node.try_get_context("bucket_name")
             or os.environ.get("HEALTHCARE_BUCKET")
@@ -75,6 +78,15 @@ class HealthcareMetricsStack(Stack):
         # Grant Glue role read/write access regardless of which path taken
         bucket.grant_read_write(glue_role)
 
+        # ── Allow Glue to read Google Drive credentials from Secrets Manager
+        glue_role.add_to_policy(iam.PolicyStatement(
+            actions=["secretsmanager:GetSecretValue"],
+            resources=[
+                f"arn:aws:secretsmanager:{AWS_REGION}:{AWS_ACCOUNT}:"
+                f"secret:healthcare/google-drive-credentials-*"
+            ]
+        ))
+        
         # ── 3. S3 folder structure ────────────────────────────
         # Runs regardless of whether bucket was created or imported.
         # BucketDeployment is idempotent — if the folder already exists
@@ -138,12 +150,13 @@ class HealthcareMetricsStack(Stack):
                 script_location=f"s3://{BUCKET_NAME}/scripts/glue_ingestion.py"
             ),
             default_arguments={
-                "--BUCKET_NAME":  BUCKET_NAME,
-                "--BRONZE_PATH":  f"s3://{BUCKET_NAME}/bronze/quarter={QUARTER}/",
-                "--QUARTER":      QUARTER,
-                "--job-language": "python",
-                "--enable-job-insights": "true",
-            },
+            "--BUCKET_NAME":         BUCKET_NAME,
+            "--BRONZE_PATH_PREFIX":  f"s3://{BUCKET_NAME}/bronze/",
+            "--SECRET_NAME":         "healthcare/google-drive-credentials",
+            "--DRIVE_FOLDER_ID":     "15KqJ1MZ7JcgAkOfqcaWcALWkG0dh3jpE",
+            "--job-language":        "python",
+            "--enable-job-insights": "true",
+        },
             max_capacity=0.0625,    # 1/16 DPU — minimum for Python Shell
             max_retries=1,
             timeout=30,             # minutes
