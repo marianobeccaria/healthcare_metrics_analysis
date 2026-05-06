@@ -23,8 +23,8 @@ HealthcareMetricsStack(
     app,
     "HealthcareMetricsStack",
     env=cdk.Environment(
-        account=os.environ.get("HEALTHCARE_ACCOUNT"),
-        region=os.environ.get("HEALTHCARE_REGION", "us-east-1")
+        account=os.environ.get("HEALTHCARE_AWS_ACCOUNT"),
+        region=os.environ.get("HEALTHCARE_AWS_REGION", "us-east-1")
     ),
     description="Healthcare Metrics Pipeline — Glue Workflow + Delta Lake on S3"
 )
