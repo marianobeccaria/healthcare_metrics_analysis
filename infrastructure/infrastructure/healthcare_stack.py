@@ -27,6 +27,7 @@ class HealthcareMetricsStack(Stack):
         # Priority: CDK context flag → .env file → hardcoded default
         AWS_ACCOUNT = os.environ.get("HEALTHCARE_AWS_ACCOUNT", "858477419022")
         AWS_REGION = os.environ.get("HEALTHCARE_AWS_REGION", "us-east-1")
+        DRIVE_FOLDER_ID = os.environ.get("HEALTHCARE_DRIVE_FOLDER_ID", "15KqJ1MZ7JcgAkOfqcaWcALWkG0dh3jpE")
         
         BUCKET_NAME = (
             self.node.try_get_context("bucket_name")
@@ -149,11 +150,12 @@ class HealthcareMetricsStack(Stack):
                 python_version="3.9",
                 script_location=f"s3://{BUCKET_NAME}/scripts/glue_ingestion.py"
             ),
-            default_arguments={
+        default_arguments={
+            "--JOB_NAME":            "healthcare-ingestion", 
             "--BUCKET_NAME":         BUCKET_NAME,
             "--BRONZE_PATH_PREFIX":  f"s3://{BUCKET_NAME}/bronze/",
             "--SECRET_NAME":         "healthcare/google-drive-credentials",
-            "--DRIVE_FOLDER_ID":     "15KqJ1MZ7JcgAkOfqcaWcALWkG0dh3jpE",
+            "--DRIVE_FOLDER_ID":     DRIVE_FOLDER_ID,
             "--job-language":        "python",
             "--enable-job-insights": "true",
         },
