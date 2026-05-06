@@ -2,6 +2,7 @@
 data/raw/
 data/processed/
 data/outputs/
+mynotes/
 
 # ── Python ───────────────────────────────────────────────────
 __pycache__/
