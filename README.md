@@ -9,6 +9,9 @@ U.S. nursing facilities.
 **Pipeline:** AWS Glue Workflow (4 jobs, Delta Lake on S3)  
 **Infrastructure:** Fully managed via AWS CDK — deploy or destroy with one command
 
+<img src="docs/images/healthcare-dasboard-01.png" width="600">
+
+
 ---
 
 ## Documentation
@@ -23,28 +26,37 @@ U.S. nursing facilities.
 ## Architecture
 
 ```
-Google Drive (source data)
-     |
-     v  Glue Workflow — quarterly schedule trigger
-+--------------------------------------------------+
-|  Job 1: Glue Python Shell                        |
-|  Google Drive API → S3 Bronze                    |
+
++---------------------------------------------------+
+|       Google Drive (source data)                  |
++---------------------------------------------------+
+            |
+            v  Glue Workflow — quarterly schedule trigger
++---------------------------------------------------+
+|  Job 1: Glue Python Shell                         |
+|  Google Drive API → S3 Bronze                     |
 |  - Authenticates via service account (Secrets Mgr)|
-|  - Incremental: detects new quarters only        |
-|          |                                        |
-|          v  Trigger: ingestion SUCCEEDED          |
-|  Job 2: Glue Spark                               |
-|  S3 Bronze → S3 Silver (Delta Lake)              |
-|          |                                        |
-|          v  Parallel triggers: Bronze SUCCEEDED   |
-|  Job 3: Glue Spark   Job 4: Glue Spark           |
-|  Silver →            Silver →                    |
-|  facility_summary    staffing_metrics            |
-|  (Delta Lake)        (Delta Lake)                |
-+--------------------------------------------------+
-     |
-     v
-Streamlit Dashboard — EC2 t3.small — port 8501
+|  - Incremental: detects new quarters only         |
++---------------------------------------------------+
+            |                                        
+            v  Trigger: ingestion SUCCEEDED          
++---------------------------------------------------+
+|  Job 2: Glue Spark                                |
+|  S3 Bronze → S3 Silver (Delta Lake)               |
++---------------------------------------------------+
+            |                                        
+            v  Parallel triggers: Bronze SUCCEEDED
++---------------------------------------------------+
+|  Job 3: Glue Spark   Job 4: Glue Spark            |
+|  Silver →            Silver →                     |
+|  facility_summary    staffing_metrics             |
+|  (Delta Lake)        (Delta Lake)                 |
++---------------------------------------------------+
+            |
+            v
++---------------------------------------------------+
+|   Streamlit Dashboard — EC2 t3.small — port 8501  |
++---------------------------------------------------+
 ```
 
 All infrastructure defined in `infrastructure/infrastructure/healthcare_stack.py`
@@ -187,18 +199,6 @@ aws glue start-job-run \
 
 ---
 
-## Running the Dashboard Locally
-
-```bash
-conda activate dea-cdk
-cd dashboard
-streamlit run app.py
-```
-
-Dashboard reads directly from Gold Delta Lake tables on S3 using your AWS credentials.
-
----
-
 ## Project Steps
 
 | Step | Description | Status |
@@ -255,3 +255,27 @@ Dashboard reads directly from Gold Delta Lake tables on S3 using your AWS creden
 | File | Env name | Purpose |
 |------|----------|---------|
 | `environment.yml` | `dea-cdk` | Data analysis — pandas, numpy, EDA scripts, CDK + Infrastructure deployment |
+
+---
+
+## Running the Dashboard Locally
+
+```bash
+conda activate dea-cdk
+cd dashboard
+streamlit run app.py
+```
+
+Dashboard reads directly from Gold Delta Lake tables on S3 using your AWS credentials.
+
+---
+
+## Dashbord Metrics
+
+<img src="docs/images/healthcare-dasboard-01.png" width="600">
+
+<img src="docs/images/healthcare-dasboard-02.png" width="600">
+
+<img src="docs/images/healthcare-dasboard-03.png" width="600">
+
+<img src="docs/images/healthcare-dasboard-04.png" width="600">
