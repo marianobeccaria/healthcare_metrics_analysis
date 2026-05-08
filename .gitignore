@@ -28,6 +28,7 @@ venv/
 step2_charts/
 *.png
 *.jpg
+!docs/images/*.png
 
 # ── AWS / Credentials (NEVER commit these) ───────────────────
 .aws/
