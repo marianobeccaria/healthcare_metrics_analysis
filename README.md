@@ -199,19 +199,6 @@ aws glue start-job-run \
 
 ---
 
-## Running the Dashboard Locally
-
-```bash
-conda activate dea-cdk
-cd dashboard
-streamlit run app.py
-```
-
-Dashboard reads directly from Gold Delta Lake tables on S3 using your AWS credentials.
-
-![Healthcare Dashboard](docs/images/healthcare-dasboard-01.png)
----
-
 ## Project Steps
 
 | Step | Description | Status |
@@ -268,3 +255,27 @@ Dashboard reads directly from Gold Delta Lake tables on S3 using your AWS creden
 | File | Env name | Purpose |
 |------|----------|---------|
 | `environment.yml` | `dea-cdk` | Data analysis — pandas, numpy, EDA scripts, CDK + Infrastructure deployment |
+
+---
+
+## Running the Dashboard Locally
+
+```bash
+conda activate dea-cdk
+cd dashboard
+streamlit run app.py
+```
+
+Dashboard reads directly from Gold Delta Lake tables on S3 using your AWS credentials.
+
+---
+
+## Dashbord Metrics
+
+<img src="docs/images/healthcare-dasboard-01.png" width="600">
+
+<img src="docs/images/healthcare-dasboard-02.png" width="600">
+
+<img src="docs/images/healthcare-dasboard-03.png" width="600">
+
+<img src="docs/images/healthcare-dasboard-04.png" width="600">
